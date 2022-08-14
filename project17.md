@@ -683,7 +683,7 @@ resource "aws_iam_instance_profile" "ip" {
 }
 ```
 
-## STEP 9: Create Auto Scaling Group
+## STEP 9: Create Auto Scaling Groups
 
 Create a file called `asg-bastion-nginx.tf` which will be used to create an auto scaling group for the bastion and the Nginx server.
 Enter the following codes which creates notifications for all the auto scaling groups:
@@ -988,9 +988,6 @@ resource "aws_launch_template" "tooling-launch-template" {
   user_data = filebase64("${path.module}/tooling.sh")
 }
 
-
-
-
 # ---- Autoscaling for tooling -----
 
 resource "aws_autoscaling_group" "tooling-asg" {
@@ -1025,4 +1022,272 @@ resource "aws_autoscaling_attachment" "asg_attachment_tooling" {
   alb_target_group_arn   = aws_lb_target_group.tooling-tgt.arn
 }
 ```
+
+## Launch Template User Data
+
+We create four files for the user data of the respective servers.
+
+For Bastion serverv: `bastion.sh`:
+
+```
+# bastion userdata
+#!/bin/bash
+yum install -y mysql
+yum install -y git tmux
+yum install -y ansible
+```
+
+For Nginx server: `nginx.sh`:
+
+```
+#!/bin/bash
+yum install -y nginx
+systemctl start nginx
+systemctl enable nginx
+git clone https://github.com/enyioman/ACS-project-config.git
+mv /ACS-project-config/reverse.conf /etc/nginx/
+mv /etc/nginx/nginx.conf /etc/nginx/nginx.conf-distro
+cd /etc/nginx/
+touch nginx.conf
+sed -n 'w nginx.conf' reverse.conf
+systemctl restart nginx
+rm -rf reverse.conf
+rm -rf /ACS-project-config
+```
+
+For Tooling webserver: `tooling.sh`:
+
+```
+#!/bin/bash
+mkdir /var/www/
+sudo mount -t efs -o tls,accesspoint=fsap-01c13a4019ca59dbe fs-8b501d3f:/ /var/www/
+yum install -y httpd 
+systemctl start httpd
+systemctl enable httpd
+yum module reset php -y
+yum module enable php:remi-7.4 -y
+yum install -y php php-common php-mbstring php-opcache php-intl php-xml php-gd php-curl php-mysqlnd php-fpm php-json
+systemctl start php-fpm
+systemctl enable php-fpm
+git clone https://github.com/Livingstone95/tooling-1.git
+mkdir /var/www/html
+cp -R /tooling-1/html/*  /var/www/html/
+cd /tooling-1
+mysql -h acs-database.cdqpbjkethv0.us-east-1.rds.amazonaws.com -u ACSadmin -p toolingdb < tooling-db.sql
+cd /var/www/html/
+touch healthstatus
+sed -i "s/$db = mysqli_connect('mysql.tooling.svc.cluster.local', 'admin', 'admin', 'tooling');/$db = mysqli_connect('acs-database.cdqpbjkethv0.us-east-1.rds.amazonaws.com ', 'ACSadmin', 'admin12345', 'toolingdb');/g" functions.php
+chcon -t httpd_sys_rw_content_t /var/www/html/ -R
+systemctl restart httpd
+```
+
+And for Wordpress webserver: `wordpress.sh`:
+
+```
+#!/bin/bash
+mkdir /var/www/
+sudo mount -t efs -o tls,accesspoint=fsap-0f9364679383ffbc0 fs-8b501d3f:/ /var/www/
+yum install -y httpd 
+systemctl start httpd
+systemctl enable httpd
+yum module reset php -y
+yum module enable php:remi-7.4 -y
+yum install -y php php-common php-mbstring php-opcache php-intl php-xml php-gd php-curl php-mysqlnd php-fpm php-json
+systemctl start php-fpm
+systemctl enable php-fpm
+wget http://wordpress.org/latest.tar.gz
+tar xzvf latest.tar.gz
+rm -rf latest.tar.gz
+cp wordpress/wp-config-sample.php wordpress/wp-config.php
+mkdir /var/www/html/
+cp -R /wordpress/* /var/www/html/
+cd /var/www/html/
+touch healthstatus
+sed -i "s/localhost/acs-database.cdqpbjkethv0.us-east-1.rds.amazonaws.com/g" wp-config.php 
+sed -i "s/username_here/ACSadmin/g" wp-config.php 
+sed -i "s/password_here/admin12345/g" wp-config.php 
+sed -i "s/database_name_here/wordpressdb/g" wp-config.php 
+chcon -t httpd_sys_rw_content_t /var/www/html/ -R
+systemctl restart httpd
+```
+
+## STEP 10: Create EFS
+
+Create a new file called `efs.tf`. Enter the following code that will create the EFS and KMS key to encrypt EFS resources:
+
+```
+# create key from key management system
+resource "aws_kms_key" "ACS-kms" {
+  description = "KMS key "
+  policy      = <<EOF
+  {
+  "Version": "2012-10-17",
+  "Id": "kms-key-policy",
+  "Statement": [
+    {
+      "Sid": "Enable IAM User Permissions",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::${var.account_no}:user/terraform"},
+      "Action": "kms:*",
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+}
+
+# create key alias
+resource "aws_kms_alias" "alias" {
+  name          = "alias/kms"
+  target_key_id = aws_kms_key.ACS-kms.key_id
+}
+
+# create Elastic file system
+resource "aws_efs_file_system" "ACS-efs" {
+  encrypted  = true
+  kms_key_id = aws_kms_key.ACS-kms.arn
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "ACS-efs"
+    },
+  )
+}
+
+# set first mount target for the EFS 
+resource "aws_efs_mount_target" "subnet-1" {
+  file_system_id  = aws_efs_file_system.ACS-efs.id
+  subnet_id       = aws_subnet.private[0].id
+  security_groups = [aws_security_group.datalayer-sg.id]
+}
+
+
+# set second mount target for the EFS 
+resource "aws_efs_mount_target" "subnet-2" {
+  file_system_id  = aws_efs_file_system.ACS-efs.id
+  subnet_id       = aws_subnet.private[1].id
+  security_groups = [aws_security_group.datalayer-sg.id]
+}
+
+
+# create access point for wordpress
+resource "aws_efs_access_point" "wordpress" {
+  file_system_id = aws_efs_file_system.ACS-efs.id
+
+  posix_user {
+    gid = 0
+    uid = 0
+  }
+
+  root_directory {
+    path = "/wordpress"
+
+    creation_info {
+      owner_gid   = 0
+      owner_uid   = 0
+      permissions = 0755
+    }
+
+  }
+
+}
+
+
+# create access point for tooling
+resource "aws_efs_access_point" "tooling" {
+  file_system_id = aws_efs_file_system.ACS-efs.id
+  posix_user {
+    gid = 0
+    uid = 0
+  }
+
+  root_directory {
+
+    path = "/tooling"
+
+    creation_info {
+      owner_gid   = 0
+      owner_uid   = 0
+      permissions = 0755
+    }
+
+  }
+}
+```
+
+Declare the variables in `variables.tf`:
+
+```
+variable "account_no" {
+  type        = number
+  description = "the account number"
+}
+```
+
+And assign a value:
+
+```
+account_no = "316136048935"
+```
+
+
+## STEP 11: Create RDS
+
+Create a file called `rds.tf` and enter the following code which creates a MySQL Relational Database System:
+
+```
+# create DB subnet group from the private subnets
+resource "aws_db_subnet_group" "ACS-rds" {
+  name       = "acs-rds"
+  subnet_ids = [aws_subnet.private[2].id, aws_subnet.private[3].id]
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "ACS-rds"
+    },
+  )
+}
+
+# create the RDS instance with the subnets group
+resource "aws_db_instance" "ACS-rds" {
+  allocated_storage      = 20
+  storage_type           = "gp2"
+  engine                 = "mysql"
+  engine_version         = "5.7"
+  instance_class         = "db.t2.micro"
+  name                   = "yormadb"
+  username               = var.master-username
+  password               = var.master-password
+  parameter_group_name   = "default.mysql5.7"
+  db_subnet_group_name   = aws_db_subnet_group.ACS-rds.name
+  skip_final_snapshot    = true
+  vpc_security_group_ids = [aws_security_group.datalayer-sg.id]
+  multi_az               = "true"
+}
+```
+
+Variable declaration:
+
+```
+variable "master-username" {
+  type        = string
+  description = "DB master username"
+}
+
+variable "master-password" {
+  type        = string
+  description = "DB master password"
+}
+```
+
+Assing values:
+
+```
+master-username = "admin"
+
+master-password = "password"
+```
+
 
