@@ -1282,7 +1282,7 @@ variable "master-password" {
 }
 ```
 
-Assing values:
+Assigning values:
 
 ```
 master-username = "admin"
