@@ -850,7 +850,7 @@ resource "aws_autoscaling_group" "nginx-asg" {
 # attaching autoscaling group of nginx to external load balancer
 resource "aws_autoscaling_attachment" "asg_attachment_nginx" {
   autoscaling_group_name = aws_autoscaling_group.nginx-asg.id
-  alb_target_group_arn   = aws_lb_target_group.nginx-tgt.arn
+  lb_target_group_arn   = aws_lb_target_group.nginx-tgt.arn
 }
 ```
 
@@ -948,7 +948,7 @@ resource "aws_autoscaling_group" "wordpress-asg" {
 # attaching autoscaling group of  wordpress application to internal loadbalancer
 resource "aws_autoscaling_attachment" "asg_attachment_wordpress" {
   autoscaling_group_name = aws_autoscaling_group.wordpress-asg.id
-  alb_target_group_arn   = aws_lb_target_group.wordpress-tgt.arn
+  lb_target_group_arn   = aws_lb_target_group.wordpress-tgt.arn
 }
 
 
@@ -1019,7 +1019,7 @@ resource "aws_autoscaling_group" "tooling-asg" {
 # attaching autoscaling group of  tooling application to internal loadbalancer
 resource "aws_autoscaling_attachment" "asg_attachment_tooling" {
   autoscaling_group_name = aws_autoscaling_group.tooling-asg.id
-  alb_target_group_arn   = aws_lb_target_group.tooling-tgt.arn
+  lb_target_group_arn   = aws_lb_target_group.tooling-tgt.arn
 }
 ```
 
@@ -1257,7 +1257,7 @@ resource "aws_db_instance" "ACS-rds" {
   engine                 = "mysql"
   engine_version         = "5.7"
   instance_class         = "db.t2.micro"
-  name                   = "yormadb"
+  db_name                   = "yormadb"
   username               = var.master-username
   password               = var.master-password
   parameter_group_name   = "default.mysql5.7"
@@ -1291,3 +1291,6 @@ master-password = "password"
 ```
 
 
+We run `terraform plan` and then `terraform apply` to build the infrastructure.
+
+![Terraform apply](./media/tfapply.png)
