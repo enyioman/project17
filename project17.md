@@ -1290,6 +1290,18 @@ master-username = "admin"
 master-password = "password"
 ```
 
+For a sample of retieving outputs from Terraform, we create `outputs.tf` to return the external load balancer DNS name and target group ARN:
+
+```
+output "alb_dns_name" {
+  value = aws_lb.ext-alb.dns_name
+}
+
+output "alb_target_group_arn" {
+  value = aws_lb_target_group.nginx-tgt.arn
+}
+```
+
 
 We run `terraform plan` and then `terraform apply` to build the infrastructure.
 
