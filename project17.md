@@ -1306,3 +1306,5 @@ output "alb_target_group_arn" {
 We run `terraform plan` and then `terraform apply` to build the infrastructure.
 
 ![Terraform apply](./media/tfapply.png)
+
+The repo of this project can be found [here](https://github.com/enyioman/terraform-project17).
