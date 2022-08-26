@@ -1,9 +1,5 @@
 # AUTOMATING INFRASTRUCTURE WITH IAC USING TERRAFORM - PART 2
 
-## INTRODUCTION
-
-This project is a continuation to [project 16](https://github.com/enyioman/project16). The remaining resources are created in this project in order to set up a secured infrastructure with Terraform.
-
 ## STEP 1: Create Private Subnets
 
 Update `main.tf` with the below code:
